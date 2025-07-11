@@ -122,6 +122,7 @@ jobs:
 
       - name: Run C++ tests
         run: |
+          source venv/bin/activate
           rm -rf build
           meson build --prefix=$HOME/.local -Denable_tests=true -Denable_tools=true
           meson compile -C build --verbose
