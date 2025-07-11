@@ -112,13 +112,6 @@ jobs:
             pytest -m smoke --verbose --cov=dfanalyzer --cov-report=xml
           fi
 
-      - name: Run C++ tests
-        run: |
-          meson build --prefix=$HOME/.local --reconfigure -Denable_tests=true -Denable_tools=true
-          meson compile -C build --verbose
-          meson test -C build --verbose
-          meson test -C build --verbose --setup=mpi
-
       - name: Run DFAnalyzer
         run: |
           source venv/bin/activate
@@ -126,6 +119,14 @@ jobs:
           dfanalyzer analyzer=darshan percentile=0.99 trace_path=tests/data/extracted/darshan-posix-dxt
           dfanalyzer analyzer=dftracer analyzer/preset=dlio percentile=0.99 trace_path=tests/data/extracted/dftracer-dlio
           dfanalyzer analyzer=recorder percentile=0.99 trace_path=tests/data/extracted/recorder-posix-parquet
+
+      - name: Run C++ tests
+        run: |
+          rm -rf build
+          meson build --prefix=$HOME/.local -Denable_tests=true -Denable_tools=true
+          meson compile -C build --verbose
+          meson test -C build --verbose
+          meson test -C build --verbose --setup=mpi
 
       - name: Upload test coverage
         uses: codecov/codecov-action@v3
