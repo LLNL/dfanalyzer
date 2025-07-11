@@ -39,6 +39,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      - name: Create and activate virtual environment
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+
       - name: Install system dependencies
         run: |
           sudo apt update
@@ -67,12 +72,14 @@ jobs:
 
       - name: Install Python dependencies
         run: |
+          source venv/bin/activate
           python -m pip install --upgrade pip
           pip install --upgrade meson-python setuptools wheel
           pip install -r tests/requirements.txt
 
       - name: Install DFAnalyzer
         run: |
+          source venv/bin/activate
           pip install .[darshan] \
             -Csetup-args="--prefix=$HOME/.local" \
             -Csetup-args="-Denable_tests=true" \
@@ -96,6 +103,7 @@ jobs:
 
       - name: Run Python tests with coverage
         run: |
+          source venv/bin/activate
           if [[ "${{ steps.test-type.outputs.run_full }}" == "true" ]]; then
             echo "Running FULL test suite"
             pytest -m full --verbose --cov=dfanalyzer --cov-report=xml
@@ -113,6 +121,7 @@ jobs:
 
       - name: Run DFAnalyzer
         run: |
+          source venv/bin/activate
           # dfanalyzer analyzer=darshan percentile=0.99 trace_path=tests/data/extracted/darshan-raw view_types=[file_name,proc_name] metrics=[time]
           dfanalyzer analyzer=darshan percentile=0.99 trace_path=tests/data/extracted/darshan-posix-dxt
           dfanalyzer analyzer=dftracer analyzer/preset=dlio percentile=0.99 trace_path=tests/data/extracted/dftracer-dlio
