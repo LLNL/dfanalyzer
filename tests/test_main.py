@@ -79,9 +79,9 @@ def _test_e2e(
     """Common test logic extracted to avoid duplication."""
     checkpoint_dir = f"{tmp_path}/checkpoints"
 
-    view_types = ['proc_name', 'time_range']
-    if trace_path.endswith('darshan-posix'):
-        view_types = ['file_name', 'proc_name']
+    view_types = ["proc_name", "time_range"]
+    if trace_path.endswith("darshan-posix"):
+        view_types = ["file_name", "proc_name"]
 
     dfa = init_with_hydra(
         hydra_overrides=[
@@ -97,8 +97,6 @@ def _test_e2e(
         ]
     )
 
-    # assert dfa.hydra_config.run.dir == tmp_path.as_posix()
-    # assert dfa.hydra_config.runtime.output_dir == tmp_path.as_posix()
     assert dfa.hydra_config.analyzer.checkpoint == checkpoint
     assert dfa.hydra_config.analyzer.checkpoint_dir == checkpoint_dir
     assert dfa.hydra_config.analyzer.preset.name == preset
@@ -116,3 +114,6 @@ def _test_e2e(
     )
     if checkpoint:
         assert any(glob(f"{result.checkpoint_dir}/*.json")), "No checkpoint found"
+
+    # Shutdown the Dask client and cluster
+    dfa.shutdown()

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Analyze, visualize, and understand I/O performance issues in HPC workflows"
 authors = [{ name = "Izzet Yildirim", email = "izzetcyildirim@gmail.com" }]
 maintainers = [{ name = "Izzet Yildirim", email = "izzetcyildirim@gmail.com" }]
-requires-python = ">=3.8, <3.11"
+requires-python = ">3.8, <3.12"
 readme = { file = "README.md", content-type = "text/markdown" }
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -16,9 +16,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Build Tools",
