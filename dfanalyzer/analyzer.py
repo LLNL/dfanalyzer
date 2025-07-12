@@ -117,6 +117,8 @@ class Analyzer(abc.ABC):
         trace_path: str,
         view_types: List[ViewType],
         exclude_characteristics: List[str] = [],
+        extra_columns: Optional[Dict[str, str]] = None,
+        extra_columns_fn: Optional[Callable[[dict], dict]] = None,
         logical_view_types: bool = False,
         metric_boundaries: ViewMetricBoundaries = {},
         percentile: Optional[float] = None,
@@ -160,7 +162,11 @@ class Analyzer(abc.ABC):
         raw_stats = None
         if not self.checkpoint or not self.has_checkpoint(name=hlm_checkpoint_name):
             # Read trace & stats
-            traces = self.read_trace(trace_path=trace_path)
+            traces = self.read_trace(
+                trace_path=trace_path,
+                extra_columns=extra_columns,
+                extra_columns_fn=extra_columns_fn,
+            )
             raw_stats = self.read_stats(traces=traces)
             traces = self.postread_trace(traces=traces, view_types=hlm_view_types).map_partitions(set_size_bins)
             if self.time_sliced:
@@ -329,7 +335,12 @@ class Analyzer(abc.ABC):
         return raw_stats
 
     @abc.abstractmethod
-    def read_trace(self, trace_path: str) -> dd.DataFrame:
+    def read_trace(
+        self,
+        trace_path: str,
+        extra_columns: Optional[Dict[str, str]],
+        extra_columns_fn: Optional[Callable[[dict], dict]],
+    ) -> dd.DataFrame:
         """Reads I/O trace data from the specified path.
 
         This is an abstract method that must be implemented by subclasses

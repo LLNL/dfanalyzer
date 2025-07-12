@@ -12,7 +12,7 @@ import sys
 import zindex_py as zindex
 from dask.distributed import wait
 from glob import glob
-from typing import List
+from typing import Callable, Dict, List, Optional
 
 from .analyzer import Analyzer
 from .constants import (
@@ -177,27 +177,6 @@ def get_size(filename):
     return int(size)
 
 
-def get_conditions_default(json_obj):
-    io_cond = "POSIX" == json_obj["cat"]
-    return False, False, io_cond
-
-
-def get_conditions_deepspeed(json_obj):
-    app_cond = "__getitem__" in json_obj["name"] or "checkpoint" in json_obj["name"]
-    io_cond = "POSIX" == json_obj["cat"] or "STDIO" == json_obj["cat"]
-    compute_cond = "compute" in json_obj["name"]
-    return app_cond, compute_cond, io_cond
-
-
-def get_conditions_generic(json_obj: dict):
-    checkpoint_cond = any(
-        any(cond == json_obj[prop] for cond in conditions) for prop, conditions in COND_CHECKPOINT.items()
-    )
-    compute_cond = any(any(cond == json_obj[prop] for cond in conditions) for prop, conditions in COND_COMPUTE.items())
-    read_cond = any(any(cond == json_obj[prop] for cond in conditions) for prop, conditions in COND_READ.items())
-    return checkpoint_cond, compute_cond, read_cond
-
-
 def get_io_cat(func_name: str):
     if func_name in POSIX_METADATA_FUNCTIONS:
         return IOCategory.METADATA.value
@@ -206,80 +185,37 @@ def get_io_cat(func_name: str):
     return IOCategory.OTHER.value
 
 
-def io_columns(time_approximate=True):
+def io_columns():
     columns = {
         "fhash": "string[pyarrow]",
         "hhash": "string[pyarrow]",
         "image_id": "uint64[pyarrow]",
         "io_cat": "uint8[pyarrow]",
-        "phase": "uint16[pyarrow]",
         "size": "uint64[pyarrow]",
     }
-    if time_approximate:
-        columns.update(
-            {
-                "compute_time": "uint64[pyarrow]",
-                "checkpoint_time": "uint64[pyarrow]",
-                "read_time": "uint64[pyarrow]",
-            }
-        )
-    else:
-        columns.update(
-            {
-                "compute_time": "string[pyarrow]",
-                "checkpoint_time": "string[pyarrow]",
-                "read_time": "string[pyarrow]",
-            }
-        )
     return columns
 
 
-def io_function(json_object, current_dict, time_approximate, condition_fn):
+def io_function(json_dict: dict):
     d = {}
     d[COL_IO_CAT] = IOCategory.OTHER.value
-    d["phase"] = 0
-    if not condition_fn:
-        # condition_fn = get_conditions_default
-        # condition_fn = get_conditions_deepspeed
-        condition_fn = get_conditions_generic
-    checkpoint_cond, compute_cond, read_cond = condition_fn(json_object)
-    if time_approximate:
-        if compute_cond:
-            d["compute_time"] = current_dict["dur"]
-            d["phase"] = 1
-        elif read_cond:
-            d["read_time"] = current_dict["dur"]
-            d["phase"] = 2
-        elif checkpoint_cond:
-            d["checkpoint_time"] = current_dict["dur"]
-            d["phase"] = 3
-    else:
-        if compute_cond:
-            d["compute_time"] = current_dict["tinterval"]
-            d["phase"] = 1
-        elif read_cond:
-            d["read_time"] = current_dict["tinterval"]
-            d["phase"] = 2
-        elif checkpoint_cond:
-            d["checkpoint_time"] = current_dict["tinterval"]
-            d["phase"] = 3
-    if "args" in json_object:
-        if "fhash" in json_object["args"]:
-            d["fhash"] = str(json_object["args"]["fhash"])
-        if "size_sum" in json_object["args"]:
-            d["size"] = int(json_object["args"]["size_sum"])
-        elif json_object["cat"] in [CAT_POSIX, CAT_STDIO]:
-            name = json_object["name"]
+    if "args" in json_dict:
+        if "fhash" in json_dict["args"]:
+            d["fhash"] = str(json_dict["args"]["fhash"])
+        if "size_sum" in json_dict["args"]:
+            d["size"] = int(json_dict["args"]["size_sum"])
+        elif json_dict["cat"] in [CAT_POSIX, CAT_STDIO]:
+            name = json_dict["name"]
             io_cat = get_io_cat(name)
-            if "ret" in json_object["args"]:
-                size = int(json_object["args"]["ret"])
+            if "ret" in json_dict["args"]:
+                size = int(json_dict["args"]["ret"])
                 if size > 0:
                     if io_cat in [IOCategory.READ.value, IOCategory.WRITE.value]:
                         d["size"] = size
             d[COL_IO_CAT] = io_cat
         else:
-            if "image_idx" in json_object["args"]:
-                image_id = int(json_object["args"]["image_idx"])
+            if "image_idx" in json_dict["args"]:
+                image_id = int(json_dict["args"]["image_idx"])
                 if image_id > 0:
                     d["image_id"] = image_id
             # if "image_size" in json_object["args"]:
@@ -309,25 +245,31 @@ def load_indexed_gzip_files(filename, start, end):
     return json_lines
 
 
-def load_objects(line, fn, time_granularity, time_approximate, condition_fn, load_data):
-    d = {}
+def load_objects(
+    line: str,
+    time_granularity: float,
+    time_approximate: bool,
+    extra_columns: Optional[Dict[str, str]],
+    extra_columns_fn: Optional[Callable[[dict], dict]],
+):
+    final_dict = {}
     if line is not None and line != "" and len(line) > 0 and "[" != line[0] and "]" != line[0] and line != "\n":
-        val = {}
+        json_dict = {}
         try:
             unicode_line = "".join([i if ord(i) < 128 else "#" for i in line])
-            val = json.loads(unicode_line, strict=False)
-            logging.debug(f"Loading dict {val}")
-            if "name" in val:
-                d["name"] = val["name"]
-            if "cat" in val:
-                d["cat"] = val["cat"].lower()
-            if "pid" in val:
-                d["pid"] = val["pid"]
-            if "tid" in val:
-                d["tid"] = val["tid"]
-            if "args" in val:
-                if "hhash" in val["args"]:
-                    d["hhash"] = str(val["args"]["hhash"])
+            json_dict = json.loads(unicode_line, strict=False)
+            logging.debug(f"Loading dict {json_dict}")
+            if "name" in json_dict:
+                final_dict["name"] = json_dict["name"]
+            if "cat" in json_dict:
+                final_dict["cat"] = json_dict["cat"].lower()
+            if "pid" in json_dict:
+                final_dict["pid"] = json_dict["pid"]
+            if "tid" in json_dict:
+                final_dict["tid"] = json_dict["tid"]
+            if "args" in json_dict:
+                if "hhash" in json_dict["args"]:
+                    final_dict["hhash"] = str(json_dict["args"]["hhash"])
                 # if "level" in val["args"]:
                 #     d["level"] = int(val["args"]["level"])
                 # if (
@@ -338,62 +280,64 @@ def load_objects(line, fn, time_granularity, time_approximate, condition_fn, loa
                 #     epoch = int(val["args"]["epoch"])
                 #     if epoch > 0:
                 #         d["epoch"] = epoch
-                if "step" in val["args"]:
-                    step = int(val["args"]["step"])
+                if "step" in json_dict["args"]:
+                    step = int(json_dict["args"]["step"])
                     if step > 0:
-                        d["step"] = step
-            if "M" == val["ph"]:
-                if d["name"] == "FH":
-                    d["type"] = 1  # 1-> file hash
-                    if "args" in val and "name" in val["args"] and "value" in val["args"]:
-                        d["name"] = val["args"]["name"]
-                        d["hash"] = str(val["args"]["value"])
-                elif d["name"] == "HH":
-                    d["type"] = 2  # 2-> hostname hash
-                    if "args" in val and "name" in val["args"] and "value" in val["args"]:
-                        d["name"] = val["args"]["name"]
-                        d["hash"] = str(val["args"]["value"])
-                elif d["name"] == "SH":
-                    d["type"] = 3  # 3-> string hash
-                    if "args" in val and "name" in val["args"] and "value" in val["args"]:
-                        d["name"] = val["args"]["name"]
-                        d["hash"] = str(val["args"]["value"])
-                elif d["name"] == "PR":
-                    d["type"] = 5  # 5-> process metadata
-                    if "args" in val and "name" in val["args"] and "value" in val["args"]:
-                        d["name"] = val["args"]["name"]
-                        d["hash"] = str(val["args"]["value"])
+                        final_dict["step"] = step
+            if "M" == json_dict["ph"]:
+                if final_dict["name"] == "FH":
+                    final_dict["type"] = 1  # 1-> file hash
+                    if "args" in json_dict and "name" in json_dict["args"] and "value" in json_dict["args"]:
+                        final_dict["name"] = json_dict["args"]["name"]
+                        final_dict["hash"] = str(json_dict["args"]["value"])
+                elif final_dict["name"] == "HH":
+                    final_dict["type"] = 2  # 2-> hostname hash
+                    if "args" in json_dict and "name" in json_dict["args"] and "value" in json_dict["args"]:
+                        final_dict["name"] = json_dict["args"]["name"]
+                        final_dict["hash"] = str(json_dict["args"]["value"])
+                elif final_dict["name"] == "SH":
+                    final_dict["type"] = 3  # 3-> string hash
+                    if "args" in json_dict and "name" in json_dict["args"] and "value" in json_dict["args"]:
+                        final_dict["name"] = json_dict["args"]["name"]
+                        final_dict["hash"] = str(json_dict["args"]["value"])
+                elif final_dict["name"] == "PR":
+                    final_dict["type"] = 5  # 5-> process metadata
+                    if "args" in json_dict and "name" in json_dict["args"] and "value" in json_dict["args"]:
+                        final_dict["name"] = json_dict["args"]["name"]
+                        final_dict["hash"] = str(json_dict["args"]["value"])
                 else:
-                    d["type"] = 4  # 4-> others
-                    if "args" in val and "name" in val["args"] and "value" in val["args"]:
-                        d["name"] = val["args"]["name"]
-                        d["value"] = str(val["args"]["value"])
+                    final_dict["type"] = 4  # 4-> others
+                    if "args" in json_dict and "name" in json_dict["args"] and "value" in json_dict["args"]:
+                        final_dict["name"] = json_dict["args"]["name"]
+                        final_dict["value"] = str(json_dict["args"]["value"])
             else:
-                d["type"] = 0  # 0->regular event
-                if "dur" in val:
-                    val["dur"] = int(val["dur"])
-                    val["ts"] = int(val["ts"])
-                    d["ts"] = val["ts"]
-                    d["dur"] = val["dur"]
-                    d["te"] = d["ts"] + d["dur"]
+                final_dict["type"] = 0  # 0->regular event
+                if "dur" in json_dict:
+                    json_dict["dur"] = int(json_dict["dur"])
+                    json_dict["ts"] = int(json_dict["ts"])
+                    final_dict["ts"] = json_dict["ts"]
+                    final_dict["dur"] = json_dict["dur"]
+                    final_dict["te"] = final_dict["ts"] + final_dict["dur"]
                     if not time_approximate:
-                        d["tinterval"] = I.to_string(I.closed(val["ts"], val["ts"] + val["dur"]))
-                    d["trange"] = int(((val["ts"] + val["dur"]) / 2.0) / time_granularity)
-                d.update(io_function(val, d, time_approximate, condition_fn))
-            logging.debug(f"built an dictionary for line {d}")
-            yield d
+                        final_dict["tinterval"] = I.to_string(
+                            I.closed(json_dict["ts"], json_dict["ts"] + json_dict["dur"])
+                        )
+                    final_dict["trange"] = int(((json_dict["ts"] + json_dict["dur"]) / 2.0) / time_granularity)
+                final_dict.update(io_function(json_dict))
+                final_dict.update(extra_columns_fn(json_dict) if extra_columns_fn else {})
+            # check if all extra columns are present
+            if extra_columns and not all(col in final_dict for col in extra_columns):
+                missing_cols = [col for col in extra_columns if col not in final_dict]
+                raise ValueError(f"Missing extra columns: {missing_cols}")
+            logging.debug(f"Built a dictionary for line {final_dict}")
+            yield final_dict
         except ValueError as error:
             logging.error(f"Processing {line} failed with {error}")
     return {}
 
 
 class DFTracerAnalyzer(Analyzer):
-    def read_trace(self, trace_path: str) -> dd.DataFrame:
-        conditions = None
-        load_cols = {}
-        load_data = {}
-        load_fn = None
-        metadata_cols = {}
+    def read_trace(self, trace_path, extra_columns, extra_columns_fn):
         if os.path.isdir(trace_path) and "*" not in trace_path:
             trace_path = f"{trace_path}/*.pfw*"
         # ===============================================
@@ -411,10 +355,9 @@ class DFTracerAnalyzer(Analyzer):
             else:
                 logging.warning(f"Ignoring unsuported file {file}")
         if len(all_files) == 0:
-            logging.error(f"No files selected for .pfw and .pfw.gz")
+            logging.error("No files selected for .pfw and .pfw.gz")
             exit(1)
         logging.debug(f"Processing files {all_files}")
-        delayed_indices = []
         if len(pfw_gz_pattern) > 0:
             db.from_sequence(pfw_gz_pattern).map(create_index).compute()
         logging.info(f"Created index for {len(pfw_gz_pattern)} files")
@@ -443,11 +386,10 @@ class DFTracerAnalyzer(Analyzer):
             gz_bag = (
                 json_lines.map(
                     load_objects,
-                    fn=load_fn,
                     time_granularity=self.time_granularity,
                     time_approximate=self.time_approximate,
-                    condition_fn=conditions,
-                    load_data=load_data,
+                    extra_columns=extra_columns,
+                    extra_columns_fn=extra_columns_fn,
                 )
                 .flatten()
                 .filter(lambda x: "name" in x)
@@ -458,11 +400,10 @@ class DFTracerAnalyzer(Analyzer):
                 db.read_text(pfw_pattern)
                 .map(
                     load_objects,
-                    fn=load_fn,
                     time_granularity=self.time_granularity,
                     time_approximate=self.time_approximate,
-                    condition_fn=conditions,
-                    load_data=load_data,
+                    extra_columns=extra_columns,
+                    extra_columns_fn=extra_columns_fn,
                 )
                 .flatten()
                 .filter(lambda x: "name" in x)
@@ -504,7 +445,6 @@ class DFTracerAnalyzer(Analyzer):
                 if self.time_approximate:
                     columns["tinterval"] = "string[pyarrow]"
             columns.update(io_columns())
-            columns.update(load_cols)
             file_hash_columns = {
                 "name": "string",
                 "hash": "string",
@@ -562,19 +502,11 @@ class DFTracerAnalyzer(Analyzer):
                     'tid': "uint64[pyarrow]",
                     'hhash': "string[pyarrow]",
                 }
-            if "FH" in metadata_cols:
-                file_hash_columns.update(metadata_cols["FH"])
-            if "HH" in metadata_cols:
-                hostname_hash_columns.update(metadata_cols["HH"])
-            if "SH" in metadata_cols:
-                string_hash_columns.update(metadata_cols["SH"])
-            if "M" in metadata_cols:
-                other_metadata_columns.update(metadata_cols["M"])
             columns.update(file_hash_columns)
             columns.update(hostname_hash_columns)
             columns.update(string_hash_columns)
             columns.update(other_metadata_columns)
-
+            columns.update(extra_columns or {})
             self.all_events = main_bag.to_dataframe(meta=columns)
             events = self.all_events.query("type == 0")
             self.file_hash = (

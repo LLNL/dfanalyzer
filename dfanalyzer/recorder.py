@@ -38,7 +38,7 @@ TRACE_COL_MAPPING = {
 
 
 class RecorderAnalyzer(Analyzer):
-    def read_trace(self, trace_path: str) -> dd.DataFrame:
+    def read_trace(self, trace_path, extra_columns, extra_columns_fn):
         self.global_min_max = self._load_global_min_max(trace_path=trace_path)
         traces = dd.read_parquet(trace_path).rename(columns=TRACE_COL_MAPPING)
         return traces

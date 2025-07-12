@@ -6,7 +6,7 @@ from hydra import compose, initialize
 from hydra.core.hydra_config import DictConfig, HydraConfig
 from hydra.utils import instantiate
 from omegaconf import OmegaConf
-from typing import List, Union, Optional
+from typing import Callable, Dict, List, Union, Optional
 
 from .analyzer import Analyzer
 from .cluster import ClusterType, ExternalCluster
@@ -47,10 +47,14 @@ class DFAnalyzerInstance:
         self,
         percentile: Optional[float] = None,
         view_types: Optional[List[ViewType]] = None,
+        extra_columns: Optional[Dict[str, str]] = None,
+        extra_columns_fn: Optional[Callable[[dict], dict]] = None,
     ):
         """Analyze the trace using the configured analyzer."""
         return self.analyzer.analyze_trace(
             exclude_characteristics=self.hydra_config.exclude_characteristics,
+            extra_columns=extra_columns,
+            extra_columns_fn=extra_columns_fn,
             logical_view_types=self.hydra_config.logical_view_types,
             metric_boundaries=OmegaConf.to_object(self.hydra_config.metric_boundaries),
             percentile=self.hydra_config.percentile if not percentile else percentile,
