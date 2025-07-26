@@ -141,7 +141,8 @@ def set_unique_counts(df: pd.DataFrame, layer: str):
         if COL_FILE_NAME in unique_col and 'posix' not in layer:
             continue
         nunique_col = unique_col.replace('_unique', '_nunique')
-        df[nunique_col] = df[unique_col].map(len).astype('uint64[pyarrow]')
+        # Handle null values before applying len() - null values should map to 0
+        df[nunique_col] = df[unique_col].map(lambda x: len(x) if pd.notna(x) else 0).astype('uint64[pyarrow]')
     return df.drop(columns=unique_cols)
 
 

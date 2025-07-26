@@ -71,6 +71,7 @@ class Analyzer(abc.ABC):
         checkpoint: bool = True,
         checkpoint_dir: str = "",
         debug: bool = False,
+        quantile_stats: bool = False,
         time_approximate: bool = True,
         time_granularity: float = 1e6,
         time_resolution: float = 1e6,
@@ -98,6 +99,7 @@ class Analyzer(abc.ABC):
         self.checkpoint_dir = checkpoint_dir
         self.debug = debug
         self.derived_metrics = preset.derived_metrics or {}
+        self.quantile_stats = quantile_stats
         self.layer_defs = preset.layer_defs
         self.layer_deps = preset.layer_deps or {}
         self.layers = list(preset.layer_defs.keys())
@@ -900,18 +902,24 @@ class Analyzer(abc.ABC):
                 view_agg[col] = [sum]
             elif any(map(col.endswith, view_types_diff)):
                 view_agg[col] = [unique_set_flatten()]
-            else:
+            elif pd.api.types.is_numeric_dtype(records[col].dtype):
                 view_agg[col] = [
                     sum,
                     min,
                     max,
                     "mean",
                     "std",
-                    quantile_stats(0.01, 0.99),
-                    quantile_stats(0.05, 0.95),
-                    quantile_stats(0.1, 0.9),
-                    quantile_stats(0.25, 0.75),
                 ]
+                if self.quantile_stats:
+                    view_agg[col].append(quantile_stats(0.01, 0.99))
+                    view_agg[col].append(quantile_stats(0.05, 0.95))
+                    view_agg[col].append(quantile_stats(0.1, 0.9))
+                    view_agg[col].append(quantile_stats(0.25, 0.75))
+            else:
+                raise TypeError(
+                    f"Unsupported data type '{records[col].dtype}' for column '{col}'. "
+                    f"Developer must add explicit handling for this data type in _compute_view method."
+                )
         view_agg.update({col: [unique_set()] for col in local_view_types_diff})
 
         view = (

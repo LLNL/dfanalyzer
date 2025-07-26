@@ -193,6 +193,7 @@ class AnalyzerConfig:
     checkpoint: Optional[bool] = True
     checkpoint_dir: Optional[str] = "${hydra:run.dir}/checkpoints"
     preset: Optional[AnalyzerPresetConfig] = MISSING
+    quantile_stats: Optional[bool] = False
     time_approximate: Optional[bool] = True
     time_granularity: Optional[float] = MISSING
     time_resolution: Optional[float] = MISSING

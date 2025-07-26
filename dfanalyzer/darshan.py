@@ -52,15 +52,17 @@ class DarshanAnalyzer(Analyzer):
         if all('DXT_POSIX' in report.records for report in reports):
             # Let the analyzer do read_trace etc as normal
             return super().analyze_trace(
-                trace_path,
-                view_types,
-                exclude_characteristics,
-                logical_view_types,
-                metric_boundaries,
-                percentile,
-                threshold,
-                time_view_type,
-                unoverlapped_posix_only,
+                trace_path=trace_path,
+                view_types=view_types,
+                exclude_characteristics=exclude_characteristics,
+                extra_columns=extra_columns,
+                extra_columns_fn=extra_columns_fn,
+                logical_view_types=logical_view_types,
+                metric_boundaries=metric_boundaries,
+                percentile=percentile,
+                threshold=threshold,
+                time_view_type=time_view_type,
+                unoverlapped_posix_only=unoverlapped_posix_only,
             )
 
         if any(view_type not in ['file_name', 'proc_name'] for view_type in view_types):

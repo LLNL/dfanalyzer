@@ -38,16 +38,58 @@ def unique_set():
     return dd.Aggregation(
         'unique',
         lambda s: s.apply(lambda x: set() if pd.isna(x).any() else set(x)),
-        lambda s0: s0.apply(lambda x: set(it.chain.from_iterable(x))),
+        lambda s0: s0.apply(lambda x: set(it.chain.from_iterable(x)) if not pd.isna(x).any() else set()),
         lambda s1: s1.apply(lambda x: set(x) if len(x) > 0 else pd.NA),
     )
 
 
 def unique_set_flatten():
+    def safe_union(x):
+        # Handle null values
+        if pd.isna(x).any() if hasattr(x, 'any') else pd.isna(x):
+            return set()
+
+        # If x is a Series, convert each element to set and union them
+        if isinstance(x, pd.Series):
+            result = set()
+            for item in x:
+                if pd.isna(item):
+                    continue
+                elif hasattr(item, '__iter__') and not isinstance(item, (str, bytes)):
+                    try:
+                        result.update(item)
+                    except TypeError:
+                        result.add(item)
+                else:
+                    result.add(item)
+            return result
+
+        # Handle scalar or single iterable
+        if hasattr(x, '__iter__') and not isinstance(x, (str, bytes)):
+            try:
+                return set(x)
+            except TypeError:
+                return {x}
+        else:
+            return {x}
+
+    def safe_agg_union(x):
+        # Aggregate function to union all sets
+        if isinstance(x, pd.Series):
+            result = set()
+            for item in x:
+                if isinstance(item, set):
+                    result.update(item)
+                elif not pd.isna(item):
+                    result.add(item)
+            return result
+        else:
+            return {x} if not pd.isna(x) else set()
+
     return dd.Aggregation(
         'unique',
-        lambda s: s.apply(lambda x: set() if pd.isna(x).any() else set().union(*x)),
-        lambda s0: s0.agg(lambda x: set().union(*x)),
+        lambda s: s.apply(safe_union),
+        lambda s0: s0.agg(safe_agg_union),
         lambda s1: s1.apply(set),
     )
 

@@ -31,17 +31,17 @@
 
 namespace fs = std::experimental::filesystem;
 
-#define WISIO_LOGGER cpplogger::Logger::Instance("WISIO")
-#define WISIO_LOGDEBUG(format, ...) \
-    WISIO_LOGGER->log(cpplogger::LOG_DEBUG, format, __VA_ARGS__);
-#define WISIO_LOGINFO(format, ...) \
-    WISIO_LOGGER->log(cpplogger::LOG_INFO, format, __VA_ARGS__);
-#define WISIO_LOGWARN(format, ...) \
-    WISIO_LOGGER->log(cpplogger::LOG_WARN, format, __VA_ARGS__);
-#define WISIO_LOGERROR(format, ...) \
-    WISIO_LOGGER->log(cpplogger::LOG_ERROR, format, __VA_ARGS__);
-#define WISIO_LOGPRINT(format, ...) \
-    WISIO_LOGGER->log(cpplogger::LOG_PRINT, format, __VA_ARGS__);
+#define DFANALYZER_LOGGER cpplogger::Logger::Instance("DFANALYZER")
+#define DFANALYZER_LOGDEBUG(format, ...) \
+    DFANALYZER_LOGGER->log(cpplogger::LOG_DEBUG, format, __VA_ARGS__);
+#define DFANALYZER_LOGINFO(format, ...) \
+    DFANALYZER_LOGGER->log(cpplogger::LOG_INFO, format, __VA_ARGS__);
+#define DFANALYZER_LOGWARN(format, ...) \
+    DFANALYZER_LOGGER->log(cpplogger::LOG_WARN, format, __VA_ARGS__);
+#define DFANALYZER_LOGERROR(format, ...) \
+    DFANALYZER_LOGGER->log(cpplogger::LOG_ERROR, format, __VA_ARGS__);
+#define DFANALYZER_LOGPRINT(format, ...) \
+    DFANALYZER_LOGGER->log(cpplogger::LOG_PRINT, format, __VA_ARGS__);
 
 std::string getexepath()
 {
@@ -73,12 +73,12 @@ void signal_handler(int sig)
     {
     case SIGHUP:
     {
-        WISIO_LOGPRINT("hangup signal caught", 0);
+        DFANALYZER_LOGPRINT("hangup signal caught", 0);
         break;
     }
     case SIGTERM:
     {
-        WISIO_LOGPRINT("terminate signal caught", 0);
+        DFANALYZER_LOGPRINT("terminate signal caught", 0);
         MPI_Finalize();
         exit(0);
         break;
@@ -683,7 +683,7 @@ void handle_eptr(std::exception_ptr eptr) // passing by value is ok
     }
     catch (const std::exception &e)
     {
-        WISIO_LOGERROR("Caught exception:  %s", e.what());
+        DFANALYZER_LOGERROR("Caught exception:  %s", e.what());
     }
 }
 
@@ -956,7 +956,7 @@ void handle_one_record(Record *record, void *arg)
 
             char path[256];
             sprintf(path, "%s_%d.parquet", writer->base_file, writer->row_group);
-            WISIO_LOGINFO("Writing %s on rank %d", path, writer->rank);
+            DFANALYZER_LOGINFO("Writing %s on rank %d", path, writer->rank);
             PARQUET_ASSIGN_OR_THROW(auto outfile, arrow::io::FileOutputStream::Open(path));
             PARQUET_THROW_NOT_OK(parquet::arrow::WriteTable(*table, arrow::default_memory_pool(), outfile, 1024 * 1024 * 128));
 
@@ -1025,7 +1025,7 @@ int process_rank(char *parquet_file_dir, int rank, Directory dir, ParquetWriter 
     if (cst->entries > 0)
     {
         recorder_decode_records(&reader, rank, handle_one_record, writer);
-        WISIO_LOGINFO("rank %d finished, unique call signatures: %d", rank, cst->entries);
+        DFANALYZER_LOGINFO("rank %d finished, unique call signatures: %d", rank, cst->entries);
         return cst->entries;
     }
     return 0;
@@ -1060,23 +1060,23 @@ int main(int argc, char **argv)
     // sigaction(SIGABRT, &sa, NULL);
     // sigaction(SIGHUP, &sa, NULL);
     // sigaction(SIGTERM, &sa, NULL);
-    char *wisio_log_level = getenv("WISIO_LOG_LEVEL");
-    if (wisio_log_level == nullptr)
+    char *dfa_log_level = getenv("DFANALYZER_LOG_LEVEL");
+    if (dfa_log_level == nullptr)
     {
-        WISIO_LOGGER->level = cpplogger::LoggerType::LOG_ERROR;
-        WISIO_LOGINFO("Enabling ERROR loggin", "");
+        DFANALYZER_LOGGER->level = cpplogger::LoggerType::LOG_ERROR;
+        DFANALYZER_LOGINFO("Enabling ERROR logging", "");
     }
     else
     {
-        if (strcmp(wisio_log_level, "INFO") == 0)
+        if (strcmp(dfa_log_level, "INFO") == 0)
         {
-            WISIO_LOGGER->level = cpplogger::LoggerType::LOG_INFO;
-            WISIO_LOGINFO("Enabling INFO loggin", "");
+            DFANALYZER_LOGGER->level = cpplogger::LoggerType::LOG_INFO;
+            DFANALYZER_LOGINFO("Enabling INFO logging", "");
         }
-        else if (strcmp(wisio_log_level, "DEBUG") == 0)
+        else if (strcmp(dfa_log_level, "DEBUG") == 0)
         {
-            WISIO_LOGINFO("Enabling DEBUG loggin", "");
-            WISIO_LOGGER->level = cpplogger::LoggerType::LOG_DEBUG;
+            DFANALYZER_LOGINFO("Enabling DEBUG logging", "");
+            DFANALYZER_LOGGER->level = cpplogger::LoggerType::LOG_DEBUG;
         }
     }
     char parquet_file_dir[256], parquet_file_path[256];
@@ -1140,7 +1140,7 @@ int main(int argc, char **argv)
             workflow_steps += 1;
     }
     if (mpi_rank == 0)
-        WISIO_LOGPRINT("Workflow has %d mpi steps and %d workflow steps out of total %d steps", mpi_steps, workflow_steps, workflow_steps + mpi_steps);
+        DFANALYZER_LOGPRINT("Workflow has %d mpi steps and %d workflow steps out of total %d steps", mpi_steps, workflow_steps, workflow_steps + mpi_steps);
     for (step = 0; workflow_steps > 0 && step < n; ++step)
     {
         int map_element = mpi_rank * n + step;
@@ -1153,10 +1153,10 @@ int main(int argc, char **argv)
             recorder_init_reader(x->second.c_str(), &reader);
             if (reader.metadata.total_ranks == 1)
             {
-                WISIO_LOGINFO("Converting workflow step %d of %d of rank 0 in %s by rank %d", step + 1, workflow_steps, x->first.directory.c_str(), mpi_rank);
+                DFANALYZER_LOGINFO("Converting workflow step %d of %d of rank 0 in %s by rank %d", step + 1, workflow_steps, x->first.directory.c_str(), mpi_rank);
                 int entry = process_rank(parquet_file_dir, 0, x->first, &writer);
                 if (entry == 0)
-                    WISIO_LOGERROR("Incomplete trace for rank %d in directory %s", 0, x->second.c_str())
+                    DFANALYZER_LOGERROR("Incomplete trace for rank %d in directory %s", 0, x->second.c_str())
                 entries += entry;
             }
             recorder_free_reader(&reader);
@@ -1166,7 +1166,7 @@ int main(int argc, char **argv)
         MPI_Barrier(MPI_COMM_WORLD);
         step_timer.pauseTime();
         if (mpi_rank == 0)
-            WISIO_LOGPRINT("Processed workflow step %d of %d with %d entries in %f secs", (step + 1) * mpi_size, workflow_steps, total_entries, step_timer.getElapsedTime());
+            DFANALYZER_LOGPRINT("Processed workflow step %d of %d with %d entries in %f secs", (step + 1) * mpi_size, workflow_steps, total_entries, step_timer.getElapsedTime());
     }
     completed = 0;
     if (mpi_steps > 0)
@@ -1183,15 +1183,15 @@ int main(int argc, char **argv)
                 int end_rank = min(reader.metadata.total_ranks, n * (mpi_rank + 1));
                 for (int rank = start_rank; rank < end_rank; rank++)
                 {
-                    WISIO_LOGINFO("Converting mpi step %d of %d of rank %d in %s by rank %d", step + 1, num_steps, rank, x.first.directory.c_str(), mpi_rank);
+                    DFANALYZER_LOGINFO("Converting mpi step %d of %d of rank %d in %s by rank %d", step + 1, num_steps, rank, x.first.directory.c_str(), mpi_rank);
                     int entry = process_rank(parquet_file_dir, rank, x.first, &writer);
                     if (entry == 0)
-                        WISIO_LOGERROR("Incomplete trace for rank %d in directory %s", rank, x.second.c_str())
+                        DFANALYZER_LOGERROR("Incomplete trace for rank %d in directory %s", rank, x.second.c_str())
                     entries += entry;
                     auto rank_index = rank - start_rank;
                     if (rank_index == n - 1)
                     {
-                        WISIO_LOGINFO("Completed ranks %d of %d by rank %d", rank_index + 1, n, mpi_rank);
+                        DFANALYZER_LOGINFO("Completed ranks %d of %d by rank %d", rank_index + 1, n, mpi_rank);
                     }
                 }
                 recorder_free_reader(&reader);
@@ -1201,7 +1201,7 @@ int main(int argc, char **argv)
                 step_timer.pauseTime();
                 completed++;
                 if (mpi_rank == 0)
-                    WISIO_LOGPRINT("Processed mpi step %d of %d with %d entries in %f secs", completed, mpi_steps, total_entries, step_timer.getElapsedTime());
+                    DFANALYZER_LOGPRINT("Processed mpi step %d of %d with %d entries in %f secs", completed, mpi_steps, total_entries, step_timer.getElapsedTime());
             }
             step++;
             if (prev != completed)
@@ -1210,7 +1210,7 @@ int main(int argc, char **argv)
             }
         }
     }
-    WISIO_LOGPRINT("Completed %d by rank %d", completed, mpi_rank);
+    DFANALYZER_LOGPRINT("Completed %d by rank %d", completed, mpi_rank);
     writer.finish();
 
     long long int global_proc_id_min, global_proc_id_max;
@@ -1240,8 +1240,8 @@ int main(int argc, char **argv)
         int64_t tmid[2] = {0, global_max_tend};
         int64_t proc_id[2] = {global_proc_id_min, global_proc_id_max};
         int64_t file_id[2] = {global_file_id_min, global_file_id_max};
-        WISIO_LOGINFO("file_id %lld %lld", global_file_id_min, global_file_id_max);
-        WISIO_LOGINFO("proc_id %lld %lld", global_proc_id_min, global_proc_id_max);
+        DFANALYZER_LOGINFO("file_id %lld %lld", global_file_id_min, global_file_id_max);
+        DFANALYZER_LOGINFO("proc_id %lld %lld", global_proc_id_min, global_proc_id_max);
         json j = {
             {"tmid", tmid},
             {"proc_id", proc_id},
@@ -1252,7 +1252,7 @@ int main(int argc, char **argv)
         std::ofstream out(global_json);
         out << j;
         out.close();
-        WISIO_LOGPRINT("Written Global Json file by rank %d", mpi_rank);
+        DFANALYZER_LOGPRINT("Written Global Json file by rank %d", mpi_rank);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);

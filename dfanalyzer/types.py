@@ -41,10 +41,10 @@ class AnalysisRuntimeConfig:
 
 @dc.dataclass
 class RawStats:
-    job_time: dd.core.Scalar
+    job_time: "dd.Scalar"
     time_granularity: int
     time_resolution: int
-    total_count: dd.core.Scalar
+    total_count: "dd.Scalar"
 
 
 @dc.dataclass
